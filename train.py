@@ -14,20 +14,19 @@ from matplotlib.pyplot import plot, show
 
 def main():
 
-    # if config.fresh_model:
-    #     save_model(make_model2())
-    #     model = load_model()
-    #     print('created model.',end=' ')
-    # else:
-    #     model = load_model()
-    #     if not model:
-    #         save_model(make_model2())
-    #         model = load_model()
-    #         print('created model.',end=' ')
-    #     else:
-    #         print('loaded model.',end=' ')
-    # print(f'desc: {config.creation_info}')
-    model = make_model2()
+    if config.fresh_model:
+        save_model(make_model2())
+        model = load_model()
+        print('created model.',end=' ')
+    else:
+        model = load_model()
+        if not model:
+            save_model(make_model2())
+            model = load_model()
+            print('created model.',end=' ')
+        else:
+            print('loaded model.',end=' ')
+    print(f'desc: {config.creation_info}')
 
     data = load_data()
     data, data_dev = split_data(data)

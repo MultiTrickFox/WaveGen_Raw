@@ -378,6 +378,8 @@ def sample_from_out(out):
 
 def sgd(model, lr=None, batch_size=None):
 
+    conv, model, deconv = model
+
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
 
@@ -402,6 +404,8 @@ moments, variances, ep_nr = [], [], 0
 def adaptive_sgd(model, lr=None, batch_size=None,
                  alpha_moment=0.9, alpha_variance=0.999, epsilon=1e-8,
                  do_moments=True, do_variances=True, do_scaling=False):
+
+    conv, model, deconv = model
 
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
@@ -444,8 +448,11 @@ def load_model(path=None, fresh_meta=None):
     obj = pickle_load(path)
     if obj:
         model, meta, configs = obj
+        conv, model, deconv = model
         if config.use_gpu:
+            TorchModel([conv]).cuda()
             TorchModel(model).cuda()
+            TorchModel([deconv]).cuda()
         global moments, variances, ep_nr
         if fresh_meta:
             moments, variances, ep_nr = [], [], 0
@@ -459,11 +466,12 @@ def load_model(path=None, fresh_meta=None):
             if v != v_saved:
                 print(f'config conflict resolution: {k_saved} {v} -> {v_saved}')
                 setattr(config, k_saved, v_saved)
-        return model
+        return [conv, model, deconv]
 
 def save_model(model, path=None):
     from warnings import filterwarnings
     filterwarnings("ignore")
+    conv, model, deconv = model
     if not path: path = config.model_path
     path = path+'.pk'
     if config.use_gpu:
@@ -471,8 +479,10 @@ def save_model(model, path=None):
         variances_ = [[e2.detach().cuda() for e2 in e1] for e1 in variances]
         meta = [moments_, variances_]
         model = pull_copy_from_gpu(model)
+        conv, deconv = pull_copy_from_gpu([conv])[0], pull_copy_from_gpu([deconv])[0]
     else:
         meta = [moments, variances]
+    model = [conv,model,deconv]
     meta.append(ep_nr)
     configs = [[field,getattr(config,field)] for field in dir(config) if field in config.config_to_save]
     pickle_save([model,meta,configs],path)
