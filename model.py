@@ -263,11 +263,11 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
             partial_state = [stack([layer_state[i] for i in has_remaining], dim=0) for layer_state in state]
 
-            #print('inp size:',inp.size())
+            # print('inp size:',inp.size())
 
             out, partial_state = prop_model(model, partial_state, inp)
 
-            #print('out size:', out.size())
+            # print('out size:', out.size())
 
             out = out.view(out.size(0),out.size(1),1)
 
@@ -278,7 +278,7 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
             # if not config.act_classical_rnn:
             #     out = sample_from_out(out)
 
-            # print('out size after deconv:', out.size())
+            # print('out size2:', out.size())
             #
             # input('halt 3 ..')
 
@@ -329,21 +329,27 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
             for t_extra in range(extra_steps):
                 t = max_seq_len+t_extra-1
 
-                prev_responses = [response[0] for response in reversed(responses[-(config.hm_steps_back+1):])]
+                prev_responses = [response[0].view(1,response[0].size(0)) for response in reversed(responses[-(config.hm_steps_back+1):])]
                 # for i in range(1, config.hm_steps_back+1): # tdo: do ?
                 #     if len(sequences[0][t-1:t]):
                 #         prev_responses[i-1] = sequences[0][t-1]
 
-                inp = cat([response.view(1,-1) for response in prev_responses],dim=1) # tdo: stack ?
-                
+                inp = cat([response for response in prev_responses],dim=-1)
+
                 out, state = prop_model(model, state, inp)
 
-                if not config.act_classical_rnn:
-                    out = sample_from_out(out)
+                # if not config.act_classical_rnn:
+                #     out = sample_from_out(out)
 
-                responses.append([out.view(-1)])
+                responses.append([out.view(out.size(1),1)])
 
-            responses = stack([ee for e in responses for ee in e], dim=0)
+            responses = cat([ee.view(1,-1,1) for e in responses for ee in e], dim=2)
+
+            responses = deconvolve(deconvolver,responses)
+
+            # print(responses.size())
+
+            responses = responses[:,:,:-config.conv_out_size//2]
 
         return float(loss), responses
 

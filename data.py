@@ -8,6 +8,8 @@ from librosa.core import load
 
 from torch import Tensor
 
+from scipy.io.wavfile import write
+
 ##
 
 
@@ -40,6 +42,11 @@ def batchify_data(data, batch_size=None, do_shuffle=True):
     hm_batches = int(len(data)/batch_size)
     return [data[i*batch_size:(i+1)*batch_size] for i in range(hm_batches)] \
         if hm_batches else [data]
+
+
+def file_output(file, sequence):
+    sequence.resize(sequence.shape[2])
+    write(f'{file}.wav', config.sample_rate, sequence)
 
 
 ##
