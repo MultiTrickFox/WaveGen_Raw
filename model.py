@@ -200,13 +200,13 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
     if not state:
         state = empty_state(model, len(sequences))
 
-    # print('size initial:',[sequence.size() for sequence in sequences])
+    #print('size before convolve:',sequences[0].size())
 
     sequences_pure = sequences
 
     sequences = [convolve(convolver,sequence) for sequence in sequences]
 
-    # print('size after convolve:', [sequence.size() for sequence in sequences])
+    #print('size after convolve:', sequences[0].size())
 
     sequences = [transpose(sequence,1,2) for sequence in sequences]
 
@@ -224,11 +224,12 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
     hm_windows = ceil(max_seq_len/config.seq_stride_len)
     has_remaining = list(range(len(sequences)))
 
-    for i in range(hm_windows):
+    for window_ctr in range(hm_windows):
 
-        window_start = i*config.seq_stride_len
+        window_start = window_ctr*config.seq_stride_len
         is_last_window = window_start+config.seq_window_len>=max_seq_len
         window_end = window_start+config.seq_window_len if not is_last_window else max_seq_len
+        has_remaining_start = has_remaining
 
         for window_t in range(window_end-window_start -1):
 
@@ -259,40 +260,29 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
             partial_state = [stack([layer_state[i] for i in has_remaining], dim=0) for layer_state in state]
 
-            # print('inp size:',inp.size())
+            #print('inp size:',inp.size())
 
             out, partial_state = prop_model(model, partial_state, inp)
 
-            # print('out size:', out.size())
+            #print('out size:', out.size())
 
             out = out.view(out.size(0),out.size(1),1)
 
             # print('out size 2:', out.size())
-
+            #
             # input('Halt 2')
 
-            out = deconvolve(deconvolver, out)
+            # if not config.act_classical_rnn:
+            #     out = sample_from_out(out)
 
             # print('out size after deconv:', out.size())
             #
-            # print('f sequences_pure sizes:',[sequence.size() for sequence in sequences_pure])
-
-            lbl = cat([sequences_pure[i][:,:,(t+1)*config.conv_window_stride:(t+1)*config.conv_window_stride+config.conv_window_size] for i in has_remaining], dim=0)
-
-            # print('lbl size:', lbl.size())
-            #
             # input('halt 3 ..')
 
-            if not config.act_classical_rnn:
-                loss += distribution_loss(lbl, out)
-                out = sample_from_out(out)
-            else:
-                loss += sequence_loss(lbl, out)
-
             if t >= len(responses):
-                responses.append([out[has_remaining.index(i),:] if i in has_remaining else None for i in range(len(sequences))])
+                responses.append([out[has_remaining.index(i),:,:] if i in has_remaining else None for i in range(len(sequences))])
             else:
-                responses[t] = [out[has_remaining.index(i),:] if i in has_remaining else None for i in range(len(sequences))]
+                responses[t] = [out[has_remaining.index(i),:,:] if i in has_remaining else None for i in range(len(sequences))]
 
             for s, ps in zip(state, partial_state):
                 for ii,i in enumerate(has_remaining):
@@ -300,6 +290,25 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
             if window_t+1 == config.seq_stride_len:
                 state_to_transfer = [e.detach() for e in state]
+
+        for i in has_remaining_start:
+            #print(sequences_pure[0].size())
+            window_size = config.conv_window_size * config.seq_window_len
+            lbl = sequences_pure[i][:,:,window_ctr*window_size+config.conv_window_size:(window_ctr+1)*window_size]
+            #print('lbl size:', lbl.size())
+            out = cat([resp_t[i][None,:,:] for resp_t in responses if resp_t[i] is not None],2)
+            #print('out size initial:', out.size())
+            out = deconvolve(deconvolver, out)
+            #print('out after deconv:', out.size())
+            out = out[:,:,:-config.conv_out_size]
+            #print('out size after cut:',out.size())
+
+            #input('halt')
+
+            # if not config.act_classical_rnn:
+            #     loss += distribution_loss(lbl, out)
+            # else:
+            loss += sequence_loss(lbl, out)
 
         if not is_last_window:
             state = state_to_transfer
