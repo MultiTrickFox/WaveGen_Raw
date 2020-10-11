@@ -200,31 +200,25 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
     if not state:
         state = empty_state(model, len(sequences))
 
-    # todo: get a modified sequences
+    # print('size initial:',[sequence.size() for sequence in sequences])
 
-    # todo: prop_convolver over input here
-
-    print([sequence.size() for sequence in sequences])
-
-    sequences_copy = sequences
+    sequences_pure = sequences
 
     sequences = [convolve(convolver,sequence) for sequence in sequences]
 
-    sequences = [transpose(sequence,1,2) for sequence in sequences]
+    # print('size after convolve:', [sequence.size() for sequence in sequences])
 
-    print([sequence.size() for sequence in sequences])
+    sequences = [transpose(sequence,1,2) for sequence in sequences]
 
     #print('starting deconv experiments')
 
     #sequences = [transpose(sequence,1,2) for sequence in sequences]
     #sequences = [deconvolve(deconvolver,sequence) for sequence in sequences]
 
-    #print(sequences[0].size())
-
     # print(sequences_copy[0][0].sum())
     # print(sequences[0][0].sum())
-    input("Halt")
-    # TODO: sequences is changed..
+    # print('size after transpose:',[sequence.size() for sequence in sequences])
+    # input("Halt")
 
     max_seq_len = max(sequence.size(1) for sequence in sequences)
     hm_windows = ceil(max_seq_len/config.seq_stride_len)
@@ -242,33 +236,52 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
             t = window_start+window_t
 
-            has_remaining = [i for i in has_remaining if len(sequences[i][t+1:t+2])]
+            has_remaining = [i for i in has_remaining if len(sequences[i][:,t:t+1,:])]
 
             if window_t:
-                inp = cat([sequences[i][t] for i in has_remaining],dim=0) *seq_force_ratio
+                inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining],dim=0) *seq_force_ratio
                 if seq_force_ratio != 1:
                     inp = inp + stack([responses[t-1][i] for i in has_remaining],dim=0) *(1-seq_force_ratio)
             else:
-                inp = cat([sequences[i][t] for i in has_remaining], dim=0)
+                inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining], dim=0)
 
             for ii in range(1,config.hm_steps_back+1):
                 t_prev = t-ii
                 if t_prev>=0:
-                    prev_inp = cat([sequences[i][t_prev] for i in has_remaining],dim=0) *seq_force_ratio
+                    prev_inp = cat([sequences[i][:,t_prev:t_prev+1,:] for i in has_remaining],dim=0) *seq_force_ratio
                 else:
                     prev_inp = zeros(len(has_remaining),config.timestep_size) if not config.use_gpu else zeros(len(has_remaining),config.timestep_size).cuda()
                 if seq_force_ratio != 1 and t_prev-1>=0:
                     prev_inp = prev_inp + stack([responses[t_prev-1][i] for i in has_remaining], dim=0) *(1-seq_force_ratio)
                 inp = cat([inp,prev_inp],dim=1)
 
-            lbl = cat([sequences_copy[i][t+1] for i in has_remaining], dim=0)
+            inp = inp.view(inp.size(0),inp.size(2))
 
             partial_state = [stack([layer_state[i] for i in has_remaining], dim=0) for layer_state in state]
 
+            # print('inp size:',inp.size())
+
             out, partial_state = prop_model(model, partial_state, inp)
 
-            # todo: prop_deconvolver here --really
-            # conv_transpose1d(windows,layer.w,stride=config.conv_window_stride)
+            # print('out size:', out.size())
+
+            out = out.view(out.size(0),out.size(1),1)
+
+            # print('out size 2:', out.size())
+
+            # input('Halt 2')
+
+            out = deconvolve(deconvolver, out)
+
+            # print('out size after deconv:', out.size())
+            #
+            # print('f sequences_pure sizes:',[sequence.size() for sequence in sequences_pure])
+
+            lbl = cat([sequences_pure[i][:,:,(t+1)*config.conv_window_stride:(t+1)*config.conv_window_stride+config.conv_window_size] for i in has_remaining], dim=0)
+
+            # print('lbl size:', lbl.size())
+            #
+            # input('halt 3 ..')
 
             if not config.act_classical_rnn:
                 loss += distribution_loss(lbl, out)
