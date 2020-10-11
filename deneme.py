@@ -63,7 +63,7 @@ from torch.nn.functional import conv1d
 
 from scipy.signal.windows import hann
 
-y = np.sin(2*np.pi*50*np.linspace(0,10,2048))+np.sin(2*np.pi*20*np.linspace(0,10,2048)) + np.random.normal(scale=1,size=2048)
+y = np.sin(2*np.pi*50*np.linspace(0,10,2048*2))+np.sin(2*np.pi*20*np.linspace(0,10,2048*2)) + np.random.normal(scale=1,size=2048*2)
 
 stride = 512
 
@@ -98,11 +98,18 @@ inp = inp.reshape(1,1,-1)
 print(inp.size(), wcos_var.size())
 
 
-zx = conv1d(inp, wcos_var, stride=stride)
+import config
+config.conv_window_stride = stride
+from model import FF, convolve, deconvolve
+
+
+#zx = conv1d(inp, wcos_var, stride=stride)
+zx = convolve(FF(wcos_var), inp)
 
 print('convolved size:',zx.size())
 
-xz = conv_transpose1d(zx, wcos_var, stride=stride)
+#xz = conv_transpose1d(zx, wcos_var, stride=stride)
+xz = deconvolve(FF(wcos_var), zx)
 
 print('deconvolved size:',xz.size())
 

@@ -13,9 +13,9 @@ dev_ratio = 0
 
 ## model params
 
-conv_window_size = 100
+conv_window_size = 1024
 conv_window_stride = conv_window_size//2
-conv_out_size = conv_window_size//2
+conv_out_size = 1024
 
 hm_steps_back = 0
 timestep_size = conv_out_size

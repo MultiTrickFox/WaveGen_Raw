@@ -159,9 +159,12 @@ def convolve(layer, window):
 
     return conv1d(window,layer.w,stride=config.conv_window_stride)
 
-def deconvolve(layer, window):
+def deconvolve(layer, window, true=False): # make True.
 
-    return conv_transpose1d(window,layer.w,stride=config.conv_window_stride)
+    if not true:
+        return conv_transpose1d(window,layer.w,stride=config.conv_window_stride)
+    else:
+        pass # todo
 
 
 def make_model2():
@@ -300,7 +303,7 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
             #print('out size initial:', out.size())
             out = deconvolve(deconvolver, out)
             #print('out after deconv:', out.size())
-            out = out[:,:,:-config.conv_out_size]
+            out = out[:,:,:-config.conv_out_size//2]
             #print('out size after cut:',out.size())
 
             #input('halt')
