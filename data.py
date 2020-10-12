@@ -52,5 +52,10 @@ def file_output(file, sequence):
 ##
 
 
-if __name__ == '__main__':
+def main():
     save_data()
+
+
+if __name__ == '__main__':
+    main()
+    print([e.size(-1) for e in load_data()])

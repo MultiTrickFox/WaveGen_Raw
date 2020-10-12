@@ -37,7 +37,7 @@ loss_squared = True
 
 learning_rate = 2e-3
 
-batch_size = 2
+batch_size = 0
 gradient_clip = 0
 hm_epochs = 100
 optimizer = 'custom'

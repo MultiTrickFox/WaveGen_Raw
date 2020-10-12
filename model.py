@@ -227,23 +227,32 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
     hm_windows = ceil(max_seq_len/config.seq_stride_len)
     has_remaining = list(range(len(sequences)))
 
+    #print('max seq len:',max_seq_len)
+
     for window_ctr in range(hm_windows):
+
+        #print('window ctr:', window_ctr)
 
         window_start = window_ctr*config.seq_stride_len
         is_last_window = window_start+config.seq_window_len>=max_seq_len
         window_end = window_start+config.seq_window_len if not is_last_window else max_seq_len
+        window_len = window_end-window_start
         has_remaining_start = has_remaining
 
-        for window_t in range(window_end-window_start -1):
+        #print('window ctr:',window_ctr)
+
+        for window_t in range(window_len -1):
+
+            #print('window t:',window_t)
 
             seq_force_ratio = config.seq_force_ratio**window_t
 
             t = window_start+window_t
 
-            has_remaining = [i for i in has_remaining if len(sequences[i][:,t:t+1,:])]
+            has_remaining = [i for i in has_remaining if len(sequences[i][:,t+1:t+2,:].view(-1))]
 
             if window_t:
-                inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining],dim=0) *seq_force_ratio
+                inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining], dim=0) *seq_force_ratio
                 if seq_force_ratio != 1:
                     inp = inp + stack([responses[t-1][i] for i in has_remaining],dim=0) *(1-seq_force_ratio)
             else:
@@ -294,17 +303,29 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
             if window_t+1 == config.seq_stride_len:
                 state_to_transfer = [e.detach() for e in state]
 
+        #print('has remaining start:',has_remaining_start)
+
         for i in has_remaining_start:
-            #print(sequences_pure[0].size())
-            window_size = config.conv_window_size * config.seq_window_len
-            lbl = sequences_pure[i][:,:,window_ctr*window_size+config.conv_window_size:(window_ctr+1)*window_size]
-            #print('lbl size:', lbl.size())
+            #print('\tworking on:',i)
+
+            #print('\tpure seq size:',sequences_pure[i].size())
+            #window_size = config.conv_window_size * config.seq_window_len
+
+            # is this out / lbl business corrcetly indexed ?
+
+            #print(window_len,config.conv_window_size*window_len)
+
+            lbl = sequences_pure[i][:,:,config.conv_window_size:-config.conv_window_stride]#window_ctr*window_size+config.conv_window_size+config.conv_window_stride:(window_ctr+1)*window_size-config.conv_window_stride]
+            #print('\tlbl size:', lbl.size())
             out = cat([resp_t[i][None,:,:] for resp_t in responses if resp_t[i] is not None],2)
             #print('out size initial:', out.size())
             out = deconvolve(deconvolver, out)
             #print('out after deconv:', out.size())
-            out = out[:,:,:-config.conv_out_size//2]
-            #print('out size after cut:',out.size())
+
+            # works with 1 file case but...  (or rather except all but one!!) -> rm the -conv//2 and make it conv_window_size
+
+            out = out[:,:,config.conv_window_stride:-config.conv_window_stride]
+            #print('\tout size after cut:',out.size())
 
             #input('halt')
 
@@ -468,9 +489,9 @@ def load_model(path=None, fresh_meta=None):
         model, meta, configs = obj
         conv, model, deconv = model
         if config.use_gpu:
-            TorchModel([conv]).cuda()
+            conv = type(conv)(conv.w.cuda())
             TorchModel(model).cuda()
-            TorchModel([deconv]).cuda()
+            deconv = type(deconv)(deconv.w.cuda())
         global moments, variances, ep_nr
         if fresh_meta:
             moments, variances, ep_nr = [], [], 0
