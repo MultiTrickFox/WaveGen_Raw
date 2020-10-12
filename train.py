@@ -31,11 +31,14 @@ def main():
     data = load_data()
     data, data_dev = split_data(data)
 
-    if not config.batch_size:
-        config.batch_size = len(data_dev) if config.dev_ratio else len(data)
-    elif config.batch_size > len(data):
+    if not config.batch_size or config.batch_size >= len(data):
         config.batch_size = len(data)
-    
+        one_batch = True
+    elif config.batch_size < 1:
+        config.batch_size = int(len(data)*config.batch_size)
+        one_batch = False
+    else: one_batch = False
+
     print(f'hm data: {len(data)}, hm dev: {len(data_dev)}, bs: {config.batch_size}, lr: {config.learning_rate}, \ntraining started @ {now()}')
 
     data_losss, dev_losss = [], []
@@ -51,7 +54,7 @@ def main():
 
         loss = 0
 
-        for i, batch in enumerate(batchify_data(data)):
+        for i, batch in enumerate(batchify_data(data, do_shuffle=not one_batch)):
 
             # print(f'\tbatch {i}, started @ {now()}', flush=True)
 
@@ -62,7 +65,7 @@ def main():
                 adaptive_sgd(model, batch_size=batch_size)
 
         # loss /= sum(len(sequence) for sequence in data)
-        loss = dev_loss(model, data)
+        if not one_batch: loss = dev_loss(model, data)
         data_losss.append(loss)
         if config.dev_ratio:
             dev_losss.append(dev_loss(model, data_dev))

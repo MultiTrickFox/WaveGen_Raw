@@ -157,38 +157,38 @@ def prop_model(model, states, inp):
 
 def convolve(layer, window):
 
-    return conv1d(window,layer.w,stride=config.conv_window_stride)
+    return conv1d(window, layer.w, stride=config.frame_stride)
 
 def deconvolve(layer, window, true=False): # make True.
 
     if not true:
-        return conv_transpose1d(window,layer.w,stride=config.conv_window_stride)
+        return conv_transpose1d(window, layer.w, stride=config.frame_stride)
     else:
         pass # todo
 
 
 def make_model2():
 
-    init_fourier = config.conv_window_size == config.conv_out_size
+    init_fourier = config.frame_len == config.frame_out
 
-    w_conv = randn(config.conv_out_size, 1, config.conv_window_size, requires_grad=True)
+    w_conv = randn(config.frame_out,config.frame_len, requires_grad=True)
     if init_fourier:
         with no_grad():
-            for f in range(config.conv_window_size):
-                w_conv[f,...] = cos(2*pi * (f+1)/config.conv_window_size * arange(0,config.conv_window_size,1))
+            for f in range(config.frame_len):
+                w_conv[f,...] = cos(2*pi * (f+1)/config.frame_len * arange(0,config.frame_len,1))
         convolver = FF(w_conv)
     else:
         if config.init_xavier:
             xavier_normal_(w_conv, gain=5/3)
         convolver = FFT(w_conv)
 
-    w_deconv = randn(config.conv_out_size, 1, config.conv_window_size, requires_grad=True)
-    # if init_fourier:
-    #     deconvolver = FF(w_conv)
-    # else:
-    if config.init_xavier:
-        xavier_normal_(w_deconv, gain=5/3)
-    deconvolver = FFT(w_deconv)
+    w_deconv = randn(config.frame_out,config.frame_len, requires_grad=True)
+    if init_fourier:
+        deconvolver = convolver # FF(w_conv.T)
+    else:
+        if config.init_xavier:
+            xavier_normal_(w_deconv, gain=5/3)
+        deconvolver = FFT(w_deconv)
 
     return [convolver, make_model(), deconvolver]
 
@@ -205,13 +205,13 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
     #print('size before convolve:',sequences[0].size())
 
-    sequences_pure = sequences
-
-    sequences = [convolve(convolver,sequence) for sequence in sequences]
-
-    #print('size after convolve:', sequences[0].size())
-
-    sequences = [transpose(sequence,1,2) for sequence in sequences]
+    # sequences_pure = sequences
+    #
+    # sequences = [convolve(convolver,sequence) for sequence in sequences]
+    #
+    # #print('size after convolve:', sequences[0].size())
+    #
+    # sequences = [transpose(sequence,1,2) for sequence in sequences]
 
     #print('starting deconv experiments')
 
@@ -223,7 +223,7 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
     # print('size after transpose:',[sequence.size() for sequence in sequences])
     # input("Halt")
 
-    max_seq_len = max(sequence.size(1) for sequence in sequences)
+    max_seq_len = max(len(sequence) for sequence in sequences)
     hm_windows = ceil(max_seq_len/config.seq_stride_len)
     has_remaining = list(range(len(sequences)))
 
@@ -237,7 +237,6 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
         is_last_window = window_start+config.seq_window_len>=max_seq_len
         window_end = window_start+config.seq_window_len if not is_last_window else max_seq_len
         window_len = window_end-window_start
-        has_remaining_start = has_remaining
 
         #print('window ctr:',window_ctr)
 
@@ -249,52 +248,83 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
             t = window_start+window_t
 
-            has_remaining = [i for i in has_remaining if len(sequences[i][:,t+1:t+2,:].view(-1))]
+            has_remaining = [i for i in has_remaining if sequences[i][t+1:t+2]]
 
-            if window_t:
-                inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining], dim=0) *seq_force_ratio
-                if seq_force_ratio != 1:
-                    inp = inp + stack([responses[t-1][i] for i in has_remaining],dim=0) *(1-seq_force_ratio)
-            else:
-                inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining], dim=0)
+            inp = cat([sequences[i][t] for i in has_remaining], 0)
 
-            for ii in range(1,config.hm_steps_back+1):
-                t_prev = t-ii
-                if t_prev>=0:
-                    prev_inp = cat([sequences[i][:,t_prev:t_prev+1,:] for i in has_remaining],dim=0) *seq_force_ratio
-                else:
-                    prev_inp = zeros(len(has_remaining),config.timestep_size) if not config.use_gpu else zeros(len(has_remaining),config.timestep_size).cuda()
-                if seq_force_ratio != 1 and t_prev-1>=0:
-                    prev_inp = prev_inp + stack([responses[t_prev-1][i] for i in has_remaining], dim=0) *(1-seq_force_ratio)
-                inp = cat([inp,prev_inp],dim=1)
+            #print('inp size:', inp.size())
 
-            inp = inp.view(inp.size(0),inp.size(2))
+            #print('convolver size:', convolver.w.size())
+
+            inp = convolver.w @ inp
+
+
+            #print('conv"ed size:',inp.size())
+
+            #input("Halt")
+
+            if seq_force_ratio != 1:
+                inp = inp * seq_force_ratio
+                inp = inp + cat([responses[t-1][i].view(1,-1,1) for i in has_remaining], 0)  * (1-seq_force_ratio)
+
+            # if window_t:
+            #     inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining], dim=0) *seq_force_ratio
+            #     if seq_force_ratio != 1:
+            #         inp = inp + stack([responses[t-1][i] for i in has_remaining],dim=0) *(1-seq_force_ratio)
+            # else:
+            #     inp = cat([sequences[i][:,t:t+1,:] for i in has_remaining], dim=0)
+
+            # for ii in range(1,config.hm_steps_back+1):
+            #     t_prev = t-ii
+            #     if t_prev>=0:
+            #         prev_inp = cat([sequences[i][:,t_prev:t_prev+1,:] for i in has_remaining],dim=0) *seq_force_ratio
+            #     else:
+            #         prev_inp = zeros(len(has_remaining),config.timestep_size) if not config.use_gpu else zeros(len(has_remaining),config.timestep_size).cuda()
+            #     if seq_force_ratio != 1 and t_prev-1>=0:
+            #         prev_inp = prev_inp + stack([responses[t_prev-1][i] for i in has_remaining], dim=0) *(1-seq_force_ratio)
+            #     inp = cat([inp,prev_inp],dim=1)
 
             partial_state = [stack([layer_state[i] for i in has_remaining], dim=0) for layer_state in state]
 
-            # print('inp size:',inp.size())
+            inp = inp.view(inp.size(0),inp.size(1))
+
+            #print('inp_to_model size:', inp.size())
 
             out, partial_state = prop_model(model, partial_state, inp)
 
-            # print('out size:', out.size())
-
             out = out.view(out.size(0),out.size(1),1)
 
-            # print('out size 2:', out.size())
+            #print('out size exp"ed:', out.size())
+
+            #print('deconvolver w size:', deconvolver.w.size())
+
+            out = (deconvolver.w * out).sum(1) /config.frame_len
+
+            #print('after deconvolution + sum(1) size:', out.size())
+
+            lbl = cat([sequences[i][t+1] for i in has_remaining], 0)
+            lbl = lbl.view(lbl.size(0),lbl.size(1))
+
+            #print('lbl size:',lbl.size())
+
+
+            #window_ctr*window_size+config.conv_window_size+config.conv_window_stride:(window_ctr+1)*window_size-config.conv_window_stride]
+
             #
-            # input('Halt 2')
+            #input('Halt 2')
 
             # if not config.act_classical_rnn:
             #     out = sample_from_out(out)
 
             # print('out size2:', out.size())
             #
-            # input('halt 3 ..')
+
+            loss += sequence_loss(lbl, out)
 
             if t >= len(responses):
-                responses.append([out[has_remaining.index(i),:,:] if i in has_remaining else None for i in range(len(sequences))])
+                responses.append([out[has_remaining.index(i)] if i in has_remaining else None for i in range(len(sequences))])
             else:
-                responses[t] = [out[has_remaining.index(i),:,:] if i in has_remaining else None for i in range(len(sequences))]
+                responses[t] = [out[has_remaining.index(i)] if i in has_remaining else None for i in range(len(sequences))]
 
             for s, ps in zip(state, partial_state):
                 for ii,i in enumerate(has_remaining):
@@ -305,7 +335,7 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
         #print('has remaining start:',has_remaining_start)
 
-        for i in has_remaining_start:
+        #for i in has_remaining_start:
             #print('\tworking on:',i)
 
             #print('\tpure seq size:',sequences_pure[i].size())
@@ -315,24 +345,23 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
 
             #print(window_len,config.conv_window_size*window_len)
 
-            lbl = sequences_pure[i][:,:,config.conv_window_size:-config.conv_window_stride]#window_ctr*window_size+config.conv_window_size+config.conv_window_stride:(window_ctr+1)*window_size-config.conv_window_stride]
-            #print('\tlbl size:', lbl.size())
-            out = cat([resp_t[i][None,:,:] for resp_t in responses if resp_t[i] is not None],2)
-            #print('out size initial:', out.size())
-            out = deconvolve(deconvolver, out)
-            #print('out after deconv:', out.size())
-
-            # works with 1 file case but...  (or rather except all but one!!) -> rm the -conv//2 and make it conv_window_size
-
-            out = out[:,:,config.conv_window_stride:-config.conv_window_stride]
-            #print('\tout size after cut:',out.size())
-
-            #input('halt')
-
-            # if not config.act_classical_rnn:
-            #     loss += distribution_loss(lbl, out)
-            # else:
-            loss += sequence_loss(lbl, out)
+            # lbl = sequences_pure[i][:,:, config.frame_len:-config.frame_stride]#window_ctr*window_size+config.conv_window_size+config.conv_window_stride:(window_ctr+1)*window_size-config.conv_window_stride]
+            # #print('\tlbl size:', lbl.size())
+            # out = cat([resp_t[i][None,:,:] for resp_t in responses if resp_t[i] is not None],2)
+            # #print('out size initial:', out.size())
+            # out = deconvolve(deconvolver, out)
+            # #print('out after deconv:', out.size())
+            #
+            # # works with 1 file case but...  (or rather except all but one!!) -> rm the -conv//2 and make it conv_window_size
+            #
+            # out = out[:,:, config.frame_stride:-config.frame_stride]
+            # #print('\tout size after cut:',out.size())
+            #
+            # #input('halt')
+            #
+            # # if not config.act_classical_rnn:
+            # #     loss += distribution_loss(lbl, out)
+            # # else:
 
         if not is_last_window:
             state = state_to_transfer
@@ -350,27 +379,35 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
             for t_extra in range(extra_steps):
                 t = max_seq_len+t_extra-1
 
-                prev_responses = [response[0].view(1,response[0].size(0)) for response in reversed(responses[-(config.hm_steps_back+1):])]
+                # prev_responses = [response[0].view(1,response[0].size(0)) for response in reversed(responses[-(config.hm_steps_back+1):])]
                 # for i in range(1, config.hm_steps_back+1): # tdo: do ?
                 #     if len(sequences[0][t-1:t]):
                 #         prev_responses[i-1] = sequences[0][t-1]
 
-                inp = cat([response for response in prev_responses],dim=-1)
+                # inp = cat([response for response in prev_responses],dim=-1)
 
-                out, state = prop_model(model, state, inp)
+                out = responses[-1][0].view(1,-1)
+
+                out, partial_state = prop_model(model, partial_state, out)
+
+                out = out.view(out.size(0), out.size(1), 1)
 
                 # if not config.act_classical_rnn:
                 #     out = sample_from_out(out)
 
-                responses.append([out.view(out.size(1),1)])
+                responses.append([out[0]])
+
+
+            # TODO: now is reconstruction time from responses
+
 
             responses = cat([ee.view(1,-1,1) for e in responses for ee in e], dim=2)
 
-            responses = deconvolve(deconvolver,responses)
+            # responses = deconvolve(deconvolver,responses)
 
-            # print(responses.size())
+            print(responses.size())
 
-            responses = responses[:,:,:-config.conv_out_size//2]
+            responses = responses[:,:,:-config.frame_out // 2]
 
         return float(loss), responses
 

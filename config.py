@@ -13,12 +13,12 @@ dev_ratio = 0
 
 ## model params
 
-conv_window_size = 1024
-conv_window_stride = conv_window_size//2
-conv_out_size = 1024
+frame_len = 2048
+frame_stride = frame_len//4
+frame_out = frame_len
 
 hm_steps_back = 0
-timestep_size = conv_out_size
+timestep_size = frame_out
 in_size = timestep_size*(hm_steps_back+1)
 hm_modalities = 1
 out_size = timestep_size*hm_modalities*3 if not act_classical_rnn else timestep_size
