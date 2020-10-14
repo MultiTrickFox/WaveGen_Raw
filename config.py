@@ -13,8 +13,8 @@ dev_ratio = 0
 
 ## model params
 
-frame_len = 2048
-frame_stride = frame_len//4
+frame_len = 1024
+frame_stride = frame_len//2
 frame_out = frame_len
 
 hm_steps_back = 0
@@ -35,7 +35,7 @@ seq_force_ratio = 1 #0
 
 loss_squared = True
 
-learning_rate = 2e-3
+learning_rate = 1e-2
 
 batch_size = 0
 gradient_clip = 0

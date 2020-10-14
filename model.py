@@ -184,7 +184,8 @@ def make_model2():
 
     w_deconv = randn(config.frame_out,config.frame_len, requires_grad=True)
     if init_fourier:
-        deconvolver = convolver # FF(w_conv.T)
+        deconvolver = convolver
+        #deconvolver = FF(w_deconv)
     else:
         if config.init_xavier:
             xavier_normal_(w_deconv, gain=5/3)
@@ -287,8 +288,6 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
             partial_state = [stack([layer_state[i] for i in has_remaining], dim=0) for layer_state in state]
 
             inp = inp.view(inp.size(0),inp.size(1))
-
-            #print('inp_to_model size:', inp.size())
 
             out, partial_state = prop_model(model, partial_state, inp)
 
@@ -455,6 +454,7 @@ def sample_from_out(out):
 def sgd(model, lr=None, batch_size=None):
 
     conv, model, deconv = model
+    model = [conv] + model # + [deconv]
 
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
@@ -482,6 +482,7 @@ def adaptive_sgd(model, lr=None, batch_size=None,
                  do_moments=True, do_variances=True, do_scaling=False):
 
     conv, model, deconv = model
+    model = [conv] + model # + [deconv]
 
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
@@ -494,24 +495,23 @@ def adaptive_sgd(model, lr=None, batch_size=None,
     ep_nr +=1
 
     with no_grad():
-            for _, layer in enumerate(model):
-                for __, weight in enumerate(layer._asdict().values()):
-                    if weight.requires_grad:
+        for _, layer in enumerate(model):
+            for __, weight in enumerate(layer._asdict().values()):
+                if weight.requires_grad:
+                    weight.grad /= batch_size
+                    lr_ = lr
 
-                        lr_ = lr
-                        weight.grad /= batch_size
+                    if do_moments:
+                        moments[_][__] = alpha_moment * moments[_][__] + (1-alpha_moment) * weight.grad
+                        moment_hat = moments[_][__] / (1-alpha_moment**(ep_nr+1))
+                    if do_variances:
+                        variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * weight.grad**2
+                        variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
+                    if do_scaling:
+                        lr_ *= norm(weight)/norm(weight.grad)
 
-                        if do_moments:
-                            moments[_][__] = alpha_moment * moments[_][__] + (1-alpha_moment) * weight.grad
-                            moment_hat = moments[_][__] / (1-alpha_moment**(ep_nr+1))
-                        if do_variances:
-                            variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * weight.grad**2
-                            variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
-                        if do_scaling:
-                            lr_ *= norm(weight)/norm(weight.grad)
-
-                        weight -= lr_ * (moment_hat if do_moments else weight.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
-                        weight.grad = None
+                    weight -= lr_ * (moment_hat if do_moments else weight.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
+                    weight.grad = None
 
 
 ##
@@ -525,10 +525,11 @@ def load_model(path=None, fresh_meta=None):
     if obj:
         model, meta, configs = obj
         conv, model, deconv = model
+        #deconv = conv # Todo: now manually set here, is it good ?
         if config.use_gpu:
             conv = type(conv)(conv.w.cuda())
             TorchModel(model).cuda()
-            deconv = type(deconv)(deconv.w.cuda())
+            deconv = conv # Todo: now manually set here good ?
         global moments, variances, ep_nr
         if fresh_meta:
             moments, variances, ep_nr = [], [], 0
@@ -542,6 +543,13 @@ def load_model(path=None, fresh_meta=None):
             if v != v_saved:
                 print(f'config conflict resolution: {k_saved} {v} -> {v_saved}')
                 setattr(config, k_saved, v_saved)
+
+        for layer in [conv] + model + [deconv]: # todo: instead, while pulling from gpu, update the grad info.
+            try:
+                if not layer.w.requires_grad: layer.w.requires_grad = True
+            except:
+                if not layer.wi.requires_grad: layer.wi.requires_grad = True
+
         return [conv, model, deconv]
 
 def save_model(model, path=None):

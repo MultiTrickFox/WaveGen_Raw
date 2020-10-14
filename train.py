@@ -26,10 +26,10 @@ def main():
             print('created model.',end=' ')
         else:
             print('loaded model.',end=' ')
-    print(f'desc: {config.creation_info}')
+    print(f'info: {config.creation_info}')
 
     data = load_data()
-    data, data_dev = split_data(data)
+    data, data_dev = split_data(data)  ; data = [d[:100] for d in data]
 
     if not config.batch_size or config.batch_size >= len(data):
         config.batch_size = len(data)
