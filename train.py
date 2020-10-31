@@ -1,6 +1,6 @@
 import config
 from ext import now
-from model import make_model2, respond_to
+from model import make_model_higher, respond_to
 from model import load_model, save_model
 from model import sgd, adaptive_sgd
 from data import load_data, split_data, batchify_data
@@ -15,13 +15,13 @@ from matplotlib.pyplot import plot, show
 def main():
 
     if config.fresh_model:
-        save_model(make_model2())
+        save_model(make_model_higher())
         model = load_model()
         print('created model.',end=' ')
     else:
         model = load_model()
         if not model:
-            save_model(make_model2())
+            save_model(make_model_higher())
             model = load_model()
             print('created model.',end=' ')
         else:
@@ -29,7 +29,7 @@ def main():
     print(f'info: {config.creation_info}')
 
     data = load_data()
-    data, data_dev = split_data(data)  ; data = [d[:100] for d in data]
+    data, data_dev = split_data(data) # ; data = [d[:100] for d in data] # TODO: RM ME
 
     if not config.batch_size or config.batch_size >= len(data):
         config.batch_size = len(data)

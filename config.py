@@ -1,6 +1,10 @@
 ## base params
 
-act_classical_rnn = True
+conv_deconv_same = True
+
+init_fourier = True
+
+attention_only = True
 
 ## data params
 
@@ -13,16 +17,15 @@ dev_ratio = 0
 
 ## model params
 
-frame_len = 1024
-frame_stride = frame_len//2
-frame_out = frame_len
+frame_len = 2048
+frame_stride = frame_len//4
+frame_out = frame_len//2+1
 
 hm_steps_back = 0
 timestep_size = frame_out
-in_size = timestep_size*(hm_steps_back+1)
-hm_modalities = 1
-out_size = timestep_size*hm_modalities*3 if not act_classical_rnn else timestep_size
-creation_info = [in_size,'l',128,'ft' if act_classical_rnn else 'f',out_size]
+in_size = timestep_size *(hm_steps_back+1)
+out_size = timestep_size
+creation_info = [in_size,'l',128,'ft',out_size]
 
 init_xavier = True
 forget_bias = 0
@@ -60,7 +63,7 @@ output_file = 'resp'
 ##
 
 config_to_save = [
-'sample_rate', 'conv_window_size', 'conv_window_stride', 'conv_hm_convolutions',
+'sample_rate', 'frame_len', 'frame_stride', 'frame_out', 'conv_deconv_same',
 'hm_steps_back', 'in_size', 'hm_modalities', 'out_size',
 'creation_info', 'act_classical_rnn',
 ]

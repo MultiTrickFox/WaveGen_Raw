@@ -13,6 +13,8 @@ from scipy.io.wavfile import write
 ##
 
 
+
+
 def save_data():
     pickle_save([load(file,config.sample_rate)[0] for file in glob(config.data_path+'/*.wav')], config.data_path+'.pk')
 
@@ -25,7 +27,16 @@ def load_data():
     frames = [[sequence[:,i*config.frame_stride:i*config.frame_stride+config.frame_len,:]
              for i in range((sequence.size(1)-config.frame_len)//config.frame_stride + 1)]
                     for sequence in data]
+
+    from torch import cos, arange
+    from numpy import pi
+    hann = 0.5 * (1 - cos(2*pi * arange(0,config.frame_len,1)/config.frame_len)).view(1,-1,1)
+
+    frames = [[hann*f for f in seq] for seq in frames]
+
     return frames
+
+
 
 
 def split_data(data, dev_ratio=None, do_shuffle=False):
