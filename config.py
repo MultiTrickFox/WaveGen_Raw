@@ -1,7 +1,6 @@
 ## base params
 
 conv_deconv_same = True
-
 init_fourier = True
 
 attention_only = True
@@ -25,7 +24,7 @@ hm_steps_back = 0
 timestep_size = frame_out
 in_size = timestep_size *(hm_steps_back+1)
 out_size = timestep_size
-creation_info = [in_size,'l',128,'ft',out_size]
+creation_info = [in_size,'l' if not attention_only else 'ft',128,'ft',out_size]
 
 init_xavier = True
 forget_bias = 0
@@ -63,7 +62,7 @@ output_file = 'resp'
 ##
 
 config_to_save = [
-'sample_rate', 'frame_len', 'frame_stride', 'frame_out', 'conv_deconv_same',
+'sample_rate', 'frame_len', 'frame_stride', 'frame_out',
 'hm_steps_back', 'in_size', 'hm_modalities', 'out_size',
-'creation_info', 'act_classical_rnn',
+'creation_info', 'attention_only',
 ]

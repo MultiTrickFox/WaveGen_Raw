@@ -98,7 +98,7 @@ inp = inp.reshape(1,-1,1)
 
 import config
 config.frame_stride = stride
-from model import FF, convolve, deconvolve
+#from model import FF, convolve, deconvolve
 
 
 print('inp size:',inp.size())

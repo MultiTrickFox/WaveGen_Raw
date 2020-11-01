@@ -110,8 +110,8 @@ def make_model(creation_info=None):
 
     if not creation_info: creation_info = config.creation_info
 
-    layer_sizes = [e for e in config.creation_info if type(e)==int]
-    layer_types = [e for e in config.creation_info if type(e)==str]
+    layer_sizes = [e for e in creation_info if type(e)==int]
+    layer_types = [e for e in creation_info if type(e)==str]
 
     return [make_layer[layer_type](layer_sizes[i], layer_sizes[i+1]) for i,layer_type in enumerate(layer_types)]
 
@@ -136,34 +136,23 @@ def prop_model(model, states, inp):
 
         # dropout(out, inplace=True)
 
-    if not config.act_classical_rnn:
-
-        centers = out[:,:config.out_size//3].view(out.size(0), config.timestep_size, config.hm_modalities)
-        spreads = out[:,config.out_size//3:-config.out_size//3].view(out.size(0), config.timestep_size, config.hm_modalities)
-        multipliers = out[:,-config.out_size//3:].view(out.size(0), config.timestep_size, config.hm_modalities)
-
-        spreads = exp(spreads)
-        multipliers = softmax(multipliers, -1)
-
-        out = [centers, spreads, multipliers]
-
     return out, new_states
 
 
 ##
 
 
-#hann = (0.5-0.5 * cos(2*pi * arange(0,config.frame_len,1)/config.frame_len))
+# hann = (0.5-0.5 * cos(2*pi * arange(0,config.frame_len,1)/config.frame_len))
 # inv_hann = lambda window: acos(-2*window +1) /(2*pi)
 
-def convolve(layer, window):
-    return conv1d(window, layer.w, stride=config.frame_stride)
-
-def convolve_transpose(layer, window):
-    return conv_transpose1d(window, layer.w, stride=config.frame_stride)
-
-def deconvolve(layer, responses):
-    pass
+# def convolve(layer, window):
+#     return conv1d(window, layer.w, stride=config.frame_stride)
+#
+# def convolve_transpose(layer, window):
+#     return conv_transpose1d(window, layer.w, stride=config.frame_stride)
+#
+# def deconvolve(layer, responses):
+#     pass
 
 
 def make_model_higher():
@@ -423,9 +412,6 @@ def respond_to(model, sequences, state=None, training_run=True, extra_steps=0):
         return float(loss), responses
 
 
-##
-
-
 def sequence_loss(label, out, do_stack=False):
 
     if do_stack:
@@ -437,93 +423,72 @@ def sequence_loss(label, out, do_stack=False):
     return loss.sum()
 
 
-def distribution_loss(label, out):
-
-    centers, spreads, multipliers = out
-
-    label = label.view(label.size(0),label.size(1),1).repeat(1,1,config.hm_modalities)
-
-    loss = 1/sqrt(2*pi) * exp( -.5 * pow((label-centers)/spreads,2) ) /spreads
-
-    loss = (loss*multipliers).sum(-1)
-    loss = -log(loss +1e-10)
-
-    return loss.sum()
-
-def sample_from_out(out):
-
-    centers, spreads, multipliers = out
-
-    sample = Normal(centers,spreads).rsample()
-    sample = (sample*multipliers).sum(-1)
-
-    return sample
-
-
 ##
 
 
-def sgd(model, lr=None, batch_size=None):
+def sgd(models, lr=None, batch_size=None):
 
-    conv, model, deconv = model
-    model = conv + model + (deconv if not config.conv_deconv_same else [])
+    if models[0] == models[-1]:
+        models = models[:-1]
 
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
 
     with no_grad():
 
-        for layer in model:
-            for param in layer._asdict().values():
+        for model in models:
+            for layer in model:
+                for param in layer._asdict().values():
 
-                param.grad /= batch_size
+                    param.grad /= batch_size
 
-                if config.gradient_clip:
-                    param.grad.clamp(min=-config.gradient_clip,max=config.gradient_clip)
+                    if config.gradient_clip:
+                        param.grad.clamp(min=-config.gradient_clip,max=config.gradient_clip)
 
-                param -= lr * param.grad
-                param.grad = None
+                    param -= lr * param.grad
+                    param.grad = None
 
 
 moments, variances, ep_nr = [], [], 0
 
 
-def adaptive_sgd(model, lr=None, batch_size=None,
+def adaptive_sgd(models, lr=None, batch_size=None,
                  alpha_moment=0.9, alpha_variance=0.999, epsilon=1e-8,
                  do_moments=True, do_variances=True, do_scaling=False):
 
-    conv, model, deconv = model
-    model = conv + model + (deconv if not config.conv_deconv_same else [])
+    if models[0] == models[-1]:
+        models = models[:-1]
 
     if not lr: lr = config.learning_rate
     if not batch_size: batch_size = config.batch_size
 
     global moments, variances, ep_nr
     if not (moments or variances):
-        if do_moments: moments = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer._asdict().values()] for layer in model]
-        if do_variances: variances = [[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer._asdict().values()] for layer in model]
+        if do_moments: moments = [[[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer._asdict().values()] for layer in model] for model in models]
+        if do_variances: variances = [[[zeros(weight.size()) if not config.use_gpu else zeros(weight.size()).cuda() for weight in layer._asdict().values()] for layer in model] for model in models]
 
     ep_nr +=1
 
     with no_grad():
-        for _, layer in enumerate(model):
-            for __, weight in enumerate(layer._asdict().values()):
-                weight.grad /= batch_size
-                lr_ = lr
+        for _, model in enumerate(models):
+            for __, layer in enumerate(model):
+                for ___, weight in enumerate(layer._asdict().values()):
+                    weight.grad /= batch_size
+                    lr_ = lr
 
-                #print(f'{list(layer._asdict().keys())[__]}',weight.grad.pow(2).sum())
+                    #print(f'{list(layer._asdict().keys())[__]}',weight.grad.pow(2).sum())
 
-                if do_moments:
-                    moments[_][__] = alpha_moment * moments[_][__] + (1-alpha_moment) * weight.grad
-                    moment_hat = moments[_][__] / (1-alpha_moment**(ep_nr+1))
-                if do_variances:
-                    variances[_][__] = alpha_variance * variances[_][__] + (1-alpha_variance) * weight.grad**2
-                    variance_hat = variances[_][__] / (1-alpha_variance**(ep_nr+1))
-                if do_scaling:
-                    lr_ *= norm(weight)/norm(weight.grad)
+                    if do_moments:
+                        moments[_][__][___] = alpha_moment * moments[_][__][___]  + (1-alpha_moment) * weight.grad
+                        moment_hat = moments[_][__][___]  / (1-alpha_moment**(ep_nr+1))
+                    if do_variances:
+                        variances[_][__][___]  = alpha_variance * variances[_][__][___]  + (1-alpha_variance) * weight.grad**2
+                        variance_hat = variances[_][__][___]  / (1-alpha_variance**(ep_nr+1))
+                    if do_scaling:
+                        lr_ *= norm(weight)/norm(weight.grad)
 
-                weight -= lr_ * (moment_hat if do_moments else weight.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
-                weight.grad = None
+                    weight -= lr_ * (moment_hat if do_moments else weight.grad) / ((sqrt(variance_hat)+epsilon) if do_variances else 1)
+                    weight.grad = None
 
 
 ##
@@ -535,17 +500,12 @@ def load_model(path=None, fresh_meta=None):
     path = path+'.pk'
     obj = pickle_load(path)
     if obj:
-        model, meta, configs = obj
-        conv, model, deconv = model
-        if config.conv_deconv_same:
-            deconv = conv
+        models, meta, configs = obj
         if config.use_gpu:
-            TorchModel(conv).cuda()
-            TorchModel(model).cuda()
-            if config.conv_deconv_same:
-                deconv = conv
-            else:
-                TorchModel(deconv).cuda()
+            for model in models:
+                TorchModel(model).cuda()
+        if models[0] == models[-1]:
+            models[-1] = models[0]
         global moments, variances, ep_nr
         if fresh_meta:
             moments, variances, ep_nr = [], [], 0
@@ -560,26 +520,24 @@ def load_model(path=None, fresh_meta=None):
                 print(f'config conflict resolution: {k_saved} {v} -> {v_saved}')
                 setattr(config, k_saved, v_saved)
 
-        return [conv, model, deconv]
+        return models
 
-def save_model(model, path=None):
+def save_model(models, path=None):
     from warnings import filterwarnings
     filterwarnings("ignore")
-    conv, model, deconv = model
     if not path: path = config.model_path
     path = path+'.pk'
     if config.use_gpu:
         moments_ = [[e2.detach().cuda() for e2 in e1] for e1 in moments]
         variances_ = [[e2.detach().cuda() for e2 in e1] for e1 in variances]
         meta = [moments_, variances_]
-        model = pull_copy_from_gpu(model)
-        conv, deconv = pull_copy_from_gpu(conv), pull_copy_from_gpu(deconv)
+        models = [pull_copy_from_gpu(model) for model in models]
+        if models[0] == models[-1]: models[-1] = models[0]
     else:
         meta = [moments, variances]
-    model = [conv,model,deconv]
     meta.append(ep_nr)
     configs = [[field,getattr(config,field)] for field in dir(config) if field in config.config_to_save]
-    pickle_save([model,meta,configs],path)
+    pickle_save([models,meta,configs],path)
 
 
 def empty_state(model, batch_size=1):
