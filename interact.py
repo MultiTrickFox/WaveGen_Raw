@@ -8,15 +8,13 @@ def main():
         config.model_path = input('valid model: ')
         model = load_model()
 
-    import data
-    d = data.load_data(frames=not config.attention_only)
-    d, _ = data.split_data(d)
+    from data import load_data, split_data, file_output
+    d = load_data(frames=not config.attention_only)
+    # d, _ = split_data(d)
+    # from random import shuffle
+    # shuffle(d)
 
-    from random import shuffle
-    #shuffle(d)
-    d = d[:config.hm_wav_gen]
-
-    for i,seq in enumerate(d):
+    for i,seq in enumerate(d[:config.hm_wav_gen]):
 
         from model import respond_to
         _, seq = respond_to(model, [seq], training_run=False, extra_steps=config.hm_extra_steps)
@@ -25,7 +23,7 @@ def main():
             seq = seq.cpu()
         seq = seq.numpy()
 
-        data.file_output(f'{config.output_file}{i}', seq)
+        file_output(f'{config.output_file}{i}', seq)
 
 if __name__ == '__main__':
     main()

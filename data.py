@@ -7,10 +7,11 @@ from random import shuffle
 from librosa.core import load
 
 from torch import Tensor
-from torch import cos, acos, arange
+from torch import cos, arange
+from torch import no_grad
 
 from numpy import pi
-from scipy.signal.windows import hann, hanning
+# from scipy.signal.windows import hann, hanning
 
 from scipy.io.wavfile import write
 
@@ -35,17 +36,19 @@ def save_data():
 def load_data(frames=False):
     data = [Tensor(sequence[:config.frame_len+(len(sequence)-config.frame_len)//config.frame_stride*config.frame_stride])
                 for sequence in pickle_load(config.data_path+'.pk')]
-    if config.use_gpu:
-        data = [sequence.cuda() for sequence in data]
 
     if not frames:
+        if config.use_gpu:
+            data = [sequence.cuda() for sequence in data]
         return [e.view(1,1,-1) for e in data]
     else:
         data = [d.view(1,-1,1) for d in data]
-        hann_w = hann()
-        frames = [[sequence[:,i*config.frame_stride:i*config.frame_stride+config.frame_len,:] *hann_w
-                        for i in range((sequence.size(1)-config.frame_len)//config.frame_stride +1)]
-                            for sequence in data]
+        #hann_w = hann()
+        frames = [[sequence[:,i*config.frame_stride:i*config.frame_stride+config.frame_len,:] #*hann_w
+                   for i in range((sequence.size(1)-config.frame_len)//config.frame_stride+1)]
+                    for sequence in data]
+        if config.use_gpu:
+            frames = [[frame.cuda() for frame in seq] for seq in frames]
         return frames
 
 

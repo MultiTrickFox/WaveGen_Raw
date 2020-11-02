@@ -58,9 +58,9 @@ def make_model_higher():
     convolver = [convolver]
     deconvolver = [deconvolver]
 
-    body = config.creation_info[1:-1]
-    enc = make_model([config.timestep_size*2] + ['ft'] + [1])
-    dec = make_model([config.timestep_size] + ['ft'] + [config.timestep_size])
+    # body = config.creation_info[1:-1]
+    enc = make_model(config.attention1_info)
+    dec = make_model(config.attention2_info)
 
     return [convolver, enc,dec, deconvolver]
 
@@ -99,16 +99,21 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
 
         for t in range(sequence.size(1)-1):
 
-            curr_inp = sequence[:,t:t+1,:]
+            #curr_inp = sequence[:,t:t+1,:]
             prev_inps = sequence[:,:t+1,:]
             lbl = sequence[:,t+1:t+2,:]
+
+            positions = Tensor([[t+1/config.max_T,i/config.max_T] for i in range(t+1)]).view(1,-1,2)
+            if config.use_gpu: positions = positions.cuda()
 
             #print(f'{t}/{sequence.size(1)}')
 
             # print('t:',t,',prev inps size:',prev_inps.size(),'curr inp size:',curr_inp.size())
 
             #todo: hmmmm..
-            inp = cat([prev_inps,curr_inp.repeat(1,t+1,1)], -1)
+            #inp = cat([prev_inps,curr_inp.repeat(1,t+1,1)], -1)
+            inp = cat([prev_inps,positions], -1)
+
 
             # if config.seq_force_ratio != 1 and t>=2:
             #     seq_force_ratio = config.seq_force_ratio**t
@@ -174,7 +179,9 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
             responses = responses[-1]
             responses = [(deconvolver[0].w * resp).sum(1) for resp in responses]
             responses = [resp*ihann_w for resp in responses]
-
-            responses = [] # todo: stitch together responses here..
+            hm_windows = (len(sequence) - config.frame_len//config.frame_stride) +1
+            
+            responses = [ ] # todo: stitch together responses here..
+            responses = Tensor(responses).view(1,1,-1)
 
         return float(loss), responses

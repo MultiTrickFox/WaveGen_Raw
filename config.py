@@ -5,6 +5,7 @@ conv_deconv_grad = False
 init_fourier = True
 
 attention_only = True
+max_T = 500
 
 ## data params
 
@@ -21,11 +22,13 @@ frame_len = 2048
 frame_stride = frame_len//4
 frame_out = frame_len//2+1
 
-hm_steps_back = 0 #tdo: rm.
 timestep_size = frame_out
-in_size = timestep_size *(hm_steps_back+1)
+in_size = timestep_size
 out_size = timestep_size
+
 creation_info = [in_size,'l' if not attention_only else 'ft',128,'ft',out_size]
+attention1_info = [timestep_size+2, 'ft', 1]
+attention2_info = [timestep_size, 'ft', timestep_size]
 
 init_xavier = True
 forget_bias = 0
