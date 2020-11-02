@@ -16,7 +16,7 @@ from matplotlib.pyplot import plot, show
 def main():
 
     if config.attention_only:
-        from model_attn import make_model_higher, respond_to
+        from model2 import make_model_higher, respond_to
     else: from model import make_model_higher, respond_to
 
     if config.fresh_model:
@@ -35,8 +35,6 @@ def main():
 
     data = load_data(frames=not config.attention_only)
     data, data_dev = split_data(data)
-    data = [data[0]] # TODO: rm me.
-    # ; data = [d[...,:config.frame_len*2] for d in data] ; respond_to(model, [data[0]], training_run=False, extra_steps=10 ) ; input('Halt at here.')# TODO: RM ME
 
     if not config.batch_size or config.batch_size >= len(data):
         config.batch_size = len(data)

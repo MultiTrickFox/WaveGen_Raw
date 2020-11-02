@@ -157,7 +157,7 @@ def prop_model(model, states, inp):
 
 def make_model_higher():
 
-    w_conv = randn(config.frame_out,config.frame_len, requires_grad=True)
+    w_conv = randn(config.frame_out,config.frame_len, requires_grad=config.conv_deconv_grad)
     if config.init_fourier:
         with no_grad():
             for f in range(config.frame_out):
@@ -173,10 +173,10 @@ def make_model_higher():
     else:
         if config.init_fourier:
             w_deconv = w_conv.detach()
-            w_deconv.requires_grad = True
+            w_deconv.requires_grad = config.conv_deconv_grad
             deconvolver = FF(w_deconv)
         else:
-            w_deconv = randn(config.frame_out, config.frame_len, requires_grad=True)
+            w_deconv = randn(config.frame_out, config.frame_len, requires_grad=config.conv_deconv_grad)
             if config.init_xavier:
                 xavier_normal_(w_deconv, gain=5 / 3)
             deconvolver = FFT(w_deconv)
@@ -428,7 +428,9 @@ def sequence_loss(label, out, do_stack=False):
 
 def sgd(models, lr=None, batch_size=None):
 
-    if models[0] == models[-1]:
+    if not config.conv_deconv_grad:
+        models = models[1:-1]
+    elif config.conv_deconv_same:
         models = models[:-1]
 
     if not lr: lr = config.learning_rate
@@ -456,7 +458,9 @@ def adaptive_sgd(models, lr=None, batch_size=None,
                  alpha_moment=0.9, alpha_variance=0.999, epsilon=1e-8,
                  do_moments=True, do_variances=True, do_scaling=False):
 
-    if models[0] == models[-1]:
+    if not config.conv_deconv_grad:
+        models = models[1:-1]
+    elif config.conv_deconv_same:
         models = models[:-1]
 
     if not lr: lr = config.learning_rate
@@ -501,24 +505,27 @@ def load_model(path=None, fresh_meta=None):
     obj = pickle_load(path)
     if obj:
         models, meta, configs = obj
+
+        for k_saved, v_saved in configs:
+            v = getattr(config, k_saved)
+            if v != v_saved:
+                print(f'config conflict resolution: {k_saved} {v} -> {v_saved}')
+                setattr(config, k_saved, v_saved)
+
         if config.use_gpu:
             for model in models:
                 TorchModel(model).cuda()
-        if models[0] == models[-1]:
+        if config.conv_deconv_same:
             models[-1] = models[0]
+
         global moments, variances, ep_nr
         if fresh_meta:
             moments, variances, ep_nr = [], [], 0
         else:
             moments, variances, ep_nr = meta
             if config.use_gpu:
-                moments = [[e2.cuda() for e2 in e1] for e1 in moments]
-                variances = [[e2.cuda() for e2 in e1] for e1 in variances]
-        for k_saved, v_saved in configs:
-            v = getattr(config, k_saved)
-            if v != v_saved:
-                print(f'config conflict resolution: {k_saved} {v} -> {v_saved}')
-                setattr(config, k_saved, v_saved)
+                moments = [[[e2.cuda() for e2 in e1] for e1 in moments] for moments in models]
+                variances = [[[e2.cuda() for e2 in e1] for e1 in variances] for variances in models]
 
         return models
 
@@ -528,16 +535,19 @@ def save_model(models, path=None):
     if not path: path = config.model_path
     path = path+'.pk'
     if config.use_gpu:
-        moments_ = [[e2.detach().cuda() for e2 in e1] for e1 in moments]
-        variances_ = [[e2.detach().cuda() for e2 in e1] for e1 in variances]
+        moments_ = [[[e2.detach().cuda() for e2 in e1] for e1 in moments] for moments in models]
+        variances_ = [[[e2.detach().cuda() for e2 in e1] for e1 in variances] for variances in models]
         meta = [moments_, variances_]
         models = [pull_copy_from_gpu(model) for model in models]
-        if models[0] == models[-1]: models[-1] = models[0]
+        if config.conv_deconv_same: models[-1] = models[0]
     else:
         meta = [moments, variances]
     meta.append(ep_nr)
     configs = [[field,getattr(config,field)] for field in dir(config) if field in config.config_to_save]
     pickle_save([models,meta,configs],path)
+
+
+##
 
 
 def empty_state(model, batch_size=1):

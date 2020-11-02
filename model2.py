@@ -31,7 +31,7 @@ def prop_model(model, io):
 
 def make_model_higher():
 
-    w_conv = randn(config.frame_out,config.frame_len, requires_grad=True)
+    w_conv = randn(config.frame_out,config.frame_len, requires_grad=config.conv_deconv_grad)
     if config.init_fourier:
         with no_grad():
             for f in range(config.frame_out):
@@ -47,10 +47,10 @@ def make_model_higher():
     else:
         if config.init_fourier:
             w_deconv = w_conv.detach()
-            w_deconv.requires_grad = True
+            w_deconv.requires_grad = config.conv_deconv_grad
             deconvolver = FF(w_deconv)
         else:
-            w_deconv = randn(config.frame_out, config.frame_len, requires_grad=True)
+            w_deconv = randn(config.frame_out, config.frame_len, requires_grad=config.conv_deconv_grad)
             if config.init_xavier:
                 xavier_normal_(w_deconv, gain=5/3)
             deconvolver = FFT(w_deconv)
@@ -75,19 +75,20 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
 
     convolver, enc,dec, deconvolver = model
 
-    # with no_grad():
-    #     print(convolver[0].w.size(), hann().size())
-    #     convolver[0].w *= hann()
+    with no_grad():
+        #print(convolver[0].w.size(), hann().size())
+        convolver[0].w *= hann()
     #     deconvolver[0].w *= ihann(deconvolver[0].w)
 
     for i,sequence in enumerate(sequences):
 
-        print(f'seq{i}/{len(sequences)}')
+        #print(f'seq{i}/{len(sequences)}')
 
         #print('in size:',sequence.size(),'conv_w size:',convolver[0].w.unsqueeze(1).size())
 
         sequence = conv1d(sequence, convolver[0].w.unsqueeze(1), stride=config.frame_stride)
         sequence = transpose(sequence,1,2)
+        sequence /=config.frame_len
 
         #print('conved size:',sequence.size())
 
@@ -103,6 +104,7 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
 
             # print('t:',t,',prev inps size:',prev_inps.size(),'curr inp size:',curr_inp.size())
 
+            #todo: hmmmm..
             inp = cat([prev_inps,curr_inp.repeat(1,t+1,1)], -1)
 
             # if config.seq_force_ratio != 1 and t>=2:
@@ -137,35 +139,39 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
 
         #print("seq size", sequence.size(1), 'hm resps', len(responses[-1]))
 
-        for t_extra in range(extra_steps):
-            t = sequence.size(1)+t_extra-1
+        if len(sequences)==1:
 
-            #print(f't extra:{t}')
+            for t_extra in range(extra_steps):
+                t = sequence.size(1)+t_extra-1
 
-            curr_inp = responses[-1][t-1]
+                #print(f't extra:{t}')
 
-            # print(sequence[:,:,:].size(), stack(responses[-1][sequence.size(1)-1-1:],1).size())
+                curr_inp = responses[-1][t-1]
 
-            prev_inps = cat([sequence[:,:-1,:], stack(responses[-1][sequence.size(1)-1-1:],1)],1)
+                # print(sequence[:,:,:].size(), stack(responses[-1][sequence.size(1)-1-1:],1).size())
 
-            inp = cat([prev_inps,curr_inp.repeat(1,t+1,1)], -1)
+                prev_inps = cat([sequence[:,:-1,:], stack(responses[-1][sequence.size(1)-1-1:],1)],1)
 
-            #print(inp.size())
+                inp = cat([prev_inps,curr_inp.repeat(1,t+1,1)], -1)
 
-            enced = prop_model(enc, inp)
+                #print(inp.size())
 
-            # print('enced size:', enced.size())
+                enced = prop_model(enc, inp)
 
-            attn_inp = (softmax(enced,1) * prev_inps).sum(1)
+                # print('enced size:', enced.size())
 
-            # print('attnded size:', attn_inp.size())
+                attn_inp = (softmax(enced,1) * prev_inps).sum(1)
 
-            deced = prop_model(dec, attn_inp)
+                # print('attnded size:', attn_inp.size())
 
-            responses[-1].append(deced)
+                deced = prop_model(dec, attn_inp)
 
+                responses[-1].append(deced)
 
-        # TODO: now is reconstruction time from responses
-        # deconved = (deconvolver[0].w * deced).sum(1) /config.frame_len
+            responses = responses[-1]
+            responses = [(deconvolver[0].w * resp).sum(1) for resp in responses]
+            responses = [ihann(resp) for resp in responses]
+
+            responses = [] # todo: stitch together responses here..
 
         return float(loss), responses

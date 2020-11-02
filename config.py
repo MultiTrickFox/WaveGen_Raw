@@ -1,6 +1,7 @@
 ## base params
 
 conv_deconv_same = True
+conv_deconv_grad = False
 init_fourier = True
 
 attention_only = True
@@ -20,7 +21,7 @@ frame_len = 2048
 frame_stride = frame_len//4
 frame_out = frame_len//2+1
 
-hm_steps_back = 0
+hm_steps_back = 0 #tdo: rm.
 timestep_size = frame_out
 in_size = timestep_size *(hm_steps_back+1)
 out_size = timestep_size
@@ -64,5 +65,5 @@ output_file = 'resp'
 config_to_save = [
 'sample_rate', 'frame_len', 'frame_stride', 'frame_out',
 'hm_steps_back', 'in_size', 'hm_modalities', 'out_size',
-'creation_info', 'attention_only',
+'creation_info', 'attention_only', 'conv_deconv_same'
 ]
