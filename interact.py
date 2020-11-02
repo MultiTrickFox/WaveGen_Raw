@@ -9,7 +9,7 @@ def main():
         model = load_model()
 
     import data
-    d = data.load_data_frames()
+    d = data.load_data(frames=not config.attention_only)
     d, _ = data.split_data(d)
 
     from random import shuffle

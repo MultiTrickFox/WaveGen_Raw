@@ -18,10 +18,12 @@ from scipy.io.wavfile import write
 
 
 def hann():
-    return 0.5 * (1 - cos(2*pi * arange(0,config.frame_len,1)/(config.frame_len-1))) .view(1,-1)
+    return 0.5 * (1 - cos(2*pi * arange(0,config.frame_len,1)/config.frame_len)) .view(1,-1)
 
-def ihann(window):
-    return acos(-2*window +1) /(2*pi)
+def ihann():
+    h = 1/hann()
+    h[0] = 0
+    return h
 
 
 ##

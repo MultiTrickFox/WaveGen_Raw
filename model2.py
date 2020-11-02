@@ -59,8 +59,8 @@ def make_model_higher():
     deconvolver = [deconvolver]
 
     body = config.creation_info[1:-1]
-    enc = make_model([config.timestep_size*2] +body+ [1])
-    dec = make_model([config.timestep_size] +body+ [config.timestep_size])
+    enc = make_model([config.timestep_size*2] + ['ft'] + [1])
+    dec = make_model([config.timestep_size] + ['ft'] + [config.timestep_size])
 
     return [convolver, enc,dec, deconvolver]
 
@@ -75,10 +75,13 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
 
     convolver, enc,dec, deconvolver = model
 
-    with no_grad():
-        #print(convolver[0].w.size(), hann().size())
-        convolver[0].w *= hann()
-    #     deconvolver[0].w *= ihann(deconvolver[0].w)
+    hann_w = hann() if not config.use_gpu else hann().cuda()
+    ihann_w = ihann() if not config.use_gpu else ihann().cuda()
+
+    # with no_grad():
+    #     #print(convolver[0].w.size(), hann().size())
+    #     convolver[0].w *= hann_w
+    # #     deconvolver[0].w *= ihann(deconvolver[0].w)
 
     for i,sequence in enumerate(sequences):
 
@@ -86,7 +89,7 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
 
         #print('in size:',sequence.size(),'conv_w size:',convolver[0].w.unsqueeze(1).size())
 
-        sequence = conv1d(sequence, convolver[0].w.unsqueeze(1), stride=config.frame_stride)
+        sequence = conv1d(sequence, (convolver[0].w * hann_w).unsqueeze(1), stride=config.frame_stride)
         sequence = transpose(sequence,1,2)
         sequence /=config.frame_len
 
@@ -170,7 +173,7 @@ def respond_to(model, sequences, training_run=True, extra_steps=0):
 
             responses = responses[-1]
             responses = [(deconvolver[0].w * resp).sum(1) for resp in responses]
-            responses = [ihann(resp) for resp in responses]
+            responses = [resp*ihann_w for resp in responses]
 
             responses = [] # todo: stitch together responses here..
 
